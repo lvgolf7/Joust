@@ -62,6 +62,14 @@ def loadPlatforms():
     return platformimages
 
 
+def loadCondor():
+    condor_images = []
+    for i in range(1, 4):
+        img = pygame.image.load(f"img/condor{i}.png").convert_alpha()
+        condor_images.append(img)
+    return condor_images
+
+
 def drawLives(lives, screen, lifeimage):
     startx = 375
     for num in range(lives):
@@ -137,6 +145,45 @@ class platformClass(pygame.sprite.Sprite):
         self.rect.topleft = (x, y)
         self.right = self.rect.right
         self.top = self.rect.top
+
+
+class Condor(pygame.sprite.Sprite):
+    def __init__(self, images, x=950, y=80):
+        super().__init__()
+        self.images = images
+        self.image = self.images[0]
+        self.rect = self.image.get_rect()
+        self.rect.center = (x, y)
+        self.frame = 0
+        self.update_time = pygame.time.get_ticks()
+        self.sound = None
+        self.on_screen = False
+
+    def update(self):
+        ANIMATION_COOLDOWN = 200
+        if pygame.time.get_ticks() - self.update_time > ANIMATION_COOLDOWN:
+            self.update_time = pygame.time.get_ticks()
+            self.frame += 1
+        if self.frame == 2:
+            self.sound = pygame.mixer.Sound("joust_condor.wav")
+            self.sound.play()
+        if self.frame >= len(self.images):
+            self.frame = 0
+
+        if self.on_screen:
+            self.rect.x -= 5
+
+            if self.rect.right < 0:
+                self.rect.x = 950
+                self.on_screen = False
+                self.frame = 0
+                self.sound.stop()
+            if self.rect.colliderect(player.rect) and player.alive:
+                player.alive = False
+        self.image = self.images[self.frame]
+
+    def draw(self, screen):
+        screen.blit(self.image, self.rect)
 
 
 class Player(
@@ -279,33 +326,35 @@ class Player(
         self.flip = False
         self.direction = 1
         ANIMATION_COOLDOWN = 100
+        self.rect.x = 950
+        while not condor.on_screen:
+            if not self.spawned and self.lives > 0:
+                self.spawned = True
+                self.spawn_frame = 0
+                self.spawnpoint = random.choice(spawnPoints)
+                self.update_time = pygame.time.get_ticks()
+                self.image = spawnimages[self.spawn_frame]
+                self.rect = self.image.get_rect()
+                self.rect.center = self.spawnpoint
+                self.playerChannel.play(self.spawnsound)
 
-        if not self.spawned and self.lives > 0:
-            self.spawned = True
-            self.spawn_frame = 0
-            self.spawnpoint = random.choice(spawnPoints)
-            self.update_time = pygame.time.get_ticks()
-            self.image = spawnimages[self.spawn_frame]
-            self.rect = self.image.get_rect()
-            self.rect.center = self.spawnpoint
-            self.playerChannel.play(self.spawnsound)
+            if (
+                pygame.time.get_ticks() - self.update_time > ANIMATION_COOLDOWN
+                and self.lives > 0
+            ):
+                self.update_time = pygame.time.get_ticks()
+                self.spawn_frame += 1
+                self.image = spawnimages[self.spawn_frame]
+                self.rect = self.image.get_rect()
+                self.rect.center = self.spawnpoint
 
-        if (
-            pygame.time.get_ticks() - self.update_time > ANIMATION_COOLDOWN
-            and self.lives > 0
-        ):
-            self.update_time = pygame.time.get_ticks()
-            self.spawn_frame += 1
-            self.image = spawnimages[self.spawn_frame]
-            self.rect = self.image.get_rect()
-            self.rect.center = self.spawnpoint
-
-        if self.spawn_frame > 4:
-            self.frame = 3
-            self.alive = True
-            self.image = self.images[3]
-            self.spawned = False
-            self.spawn_frame = 0
+            if self.spawn_frame > 4:
+                self.frame = 3
+                self.alive = True
+                self.image = self.images[3]
+                self.spawned = False
+                self.spawn_frame = 0
+            break
 
     def update_animation(self):
         if self.lavaDeath:
@@ -326,6 +375,7 @@ playerunmountedimages = load_sliced_sprites(60, 60, "img/playerUnmounted.png")
 eggimages = load_sliced_sprites(40, 33, "img/egg.png")
 lifeimage = pygame.image.load("img/life.png").convert_alpha()
 digits = load_sliced_sprites(21, 21, "img/digits.png")
+condorimages = loadCondor()
 # Load platform images
 platforms = pygame.sprite.Group()  # Group to hold platform sprites
 platformImages = loadPlatforms()
@@ -340,7 +390,7 @@ plat8 = platformClass(platformImages[7], 600, 290)
 platforms.add(plat1, plat2, plat3, plat4, plat5, plat6, plat7, plat8)
 exit_button = Button(screen, "Exit", (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
 replay_button = Button(screen, "Replay", (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 50))
-
+condor = Condor(condorimages)
 player = Player(playerimages, 440, 500)  # Create player instance at spawn point
 
 # Main game loop
@@ -353,6 +403,14 @@ while running:
         screen.blit(platform.image, platform.rect)
     drawLives(player.lives, screen, lifeimage)  # Draw player lives
     drawScore(player.score, screen, digits)  # Draw player score
+    if not condor.on_screen and player.alive:  # Check if condor is on screen
+        temp = random.randint(1, 1000)
+
+    if condor.on_screen or (temp < 5):
+        condor.on_screen = True
+        condor.update()  # Update and draw the condor
+        condor.draw(screen)
+        temp = 100
 
     if player.alive:  # call the appropriate player animation based on state
         if player.flying or player.vel_y != 0:
